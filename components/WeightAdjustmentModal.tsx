@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Minus, Plus } from 'lucide-react';
+import { EquipmentType } from '../types';
 
 interface WeightAdjustmentModalProps {
   isOpen: boolean;
@@ -8,6 +9,8 @@ interface WeightAdjustmentModalProps {
   currentWeight: number;
   exerciseName: string;
   unit: 'kg' | 'lb';
+  equipment?: EquipmentType;
+  dumbbellPairs?: number[];
 }
 
 export const WeightAdjustmentModal: React.FC<WeightAdjustmentModalProps> = ({
@@ -16,7 +19,9 @@ export const WeightAdjustmentModal: React.FC<WeightAdjustmentModalProps> = ({
   onSave,
   currentWeight,
   exerciseName,
-  unit
+  unit,
+  equipment,
+  dumbbellPairs = [],
 }) => {
   const [weight, setWeight] = useState(currentWeight);
 
@@ -26,8 +31,10 @@ export const WeightAdjustmentModal: React.FC<WeightAdjustmentModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Determine increments based on unit
-  const baseIncrements = unit === 'kg' ? [1.25, 2.5, 5] : [2.5, 5, 10];
+  const isDumbbell = equipment === 'dumbbell';
+  const baseIncrements = isDumbbell
+    ? (unit === 'kg' ? [5] : [5, 10])
+    : unit === 'kg' ? [1.25, 2.5, 5] : [2.5, 5, 10];
   // Sort descending for display: [5, 2.5, 1.25]
   const sortedIncrements = [...baseIncrements].sort((a, b) => b - a);
 
@@ -62,6 +69,27 @@ export const WeightAdjustmentModal: React.FC<WeightAdjustmentModalProps> = ({
               <span className="text-xl font-medium text-base-content/70 mt-4">{unit}</span>
             </div>
           </div>
+
+          {isDumbbell && dumbbellPairs.length > 0 && (
+            <div className="mb-6">
+              <div className="text-xs text-base-content/60 mb-2 text-center">Your dumbbell pairs (per hand)</div>
+              <div className="grid grid-cols-4 gap-2">
+                {dumbbellPairs.map((pair) => (
+                  <button
+                    key={pair}
+                    onClick={() => setWeight(pair)}
+                    className={`py-2 rounded-lg text-sm font-bold border transition-all ${
+                      weight === pair
+                        ? 'bg-primary text-primary-content border-primary'
+                        : 'bg-base-300 text-base-content/80 border-base-300 hover:border-primary/40'
+                    }`}
+                  >
+                    {pair}{unit}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="space-y-3 mb-6">
             {/* Decrement Row */}

@@ -24,6 +24,19 @@ import { applyTheme, getStoredTheme, initializeTheme, type Theme } from './utils
 import { AuthModal } from './components/AuthModal';
 import { getCurrentUser, signOut, isAuthAvailable, type CloudUser } from './services/authService';
 import { saveToCloud, loadFromCloud, mergeData, isSyncAvailable } from './services/syncService';
+import {
+  DEFAULT_ACCESSORIES,
+  DEFAULT_WARMUPS,
+  DEFAULT_DUMBBELL_PAIRS,
+  DEFAULT_DUMBBELL_WEIGHTS,
+  MAIN_LIFT_CONFIG,
+  PROGRAMS,
+  buildAccessorySession,
+  buildMainLiftSession,
+  isBarbellProgressionLift,
+  resolveAccessoryConfig,
+  swapExerciseVariant as applyExerciseSwap,
+} from './utils/exerciseCatalog';
 
 declare const __BUILD_TIMESTAMP__: string;
 
@@ -46,7 +59,9 @@ const INITIAL_STATE: UserProfile = {
     'Bench Press': 20,
     'Barbell Row': 30,
     'Overhead Press': 20,
-    'Deadlift': 40
+    'Deadlift': 40,
+    'Goblet Squat': 20,
+    ...DEFAULT_DUMBBELL_WEIGHTS,
   },
   nextWorkout: 'A',
   history: [],
@@ -71,38 +86,8 @@ const INITIAL_STATE: UserProfile = {
     'Barbell Row': 2.5,
     'Overhead Press': 2.5,
     'Deadlift': 5
-  }
-};
-
-const PROGRAMS = {
-  'A': ['Squat', 'Bench Press', 'Barbell Row'],
-  'B': ['Squat', 'Overhead Press', 'Deadlift']
-};
-
-const DEFAULT_WARMUPS = {
-  A: [
-    { name: 'Jumping Jacks', sets: 1, targetReps: 30 },
-    { name: 'Arm Circles', sets: 1, targetReps: 20 },
-    { name: 'Bodyweight Squats', sets: 1, targetReps: 10 },
-    { name: 'Plank (seconds)', sets: 1, targetReps: 30 },
-  ],
-  B: [
-    { name: 'Mountain Climbers', sets: 1, targetReps: 20 },
-    { name: 'Hip Circles', sets: 1, targetReps: 10 },
-    { name: 'Lunges (each leg)', sets: 1, targetReps: 8 },
-    { name: 'Dead Bugs', sets: 1, targetReps: 10 },
-  ],
-};
-
-const DEFAULT_ACCESSORIES = {
-  A: [
-    { name: 'Barbell Curl', sets: 3, targetReps: 10, startWeight: 15 },
-    { name: 'Barbell Hip Thrust', sets: 3, targetReps: 10, startWeight: 30 },
-  ],
-  B: [
-    { name: 'Chin-ups', sets: 3, targetReps: 8, startWeight: 0 },
-    { name: 'Bulgarian Split Squat', sets: 3, targetReps: 8, startWeight: 20 },
-  ],
+  },
+  dumbbellPairs: DEFAULT_DUMBBELL_PAIRS,
 };
 
 export default function App() {
@@ -444,9 +429,8 @@ export default function App() {
 
     if (type === 'A' || type === 'B') {
         const scheme = user.setScheme || '3x5';
-        const mainSets = scheme === '5x5' ? 5 : 3;
 
-        // Warmup exercises (bodyweight, no barbell)
+        // Warmup exercises (bodyweight)
         const warmupDefs = (user.warmups?.[type]) || DEFAULT_WARMUPS[type];
         const warmupExercises: ExerciseSession[] = warmupDefs.map(w => ({
           name: w.name,
@@ -454,32 +438,24 @@ export default function App() {
           sets: Array(w.sets).fill(null),
           targetReps: w.targetReps,
           category: 'warmup' as ExerciseCategory,
+          equipment: 'bodyweight',
         }));
 
-        // Main lifts
-        const mainExercises: ExerciseSession[] = PROGRAMS[type].map(name => {
-          const currentWeight = user.currentWeights[name] || 0;
-          const attempt = user.exerciseAttempts?.[name] || 1;
-          const sets = name === 'Deadlift' ? 1 : mainSets;
-          return {
-            name,
-            weight: currentWeight,
-            sets: Array(sets).fill(null),
-            attempt,
-            targetReps: 5,
-            category: 'main' as ExerciseCategory,
-          };
-        });
+        const mainLiftDefs = MAIN_LIFT_CONFIG[type];
+        const mainExercises: ExerciseSession[] = mainLiftDefs.map(config =>
+          buildMainLiftSession(config, {
+            scheme,
+            currentWeights: user.currentWeights,
+            exerciseAttempts: user.exerciseAttempts,
+          })
+        );
 
-        // Accessory exercises
-        const accessoryDefs = (user.accessories?.[type]) || DEFAULT_ACCESSORIES[type];
-        const accessoryExercises: ExerciseSession[] = accessoryDefs.map(a => ({
-          name: a.name,
-          weight: user.currentWeights[a.name] ?? a.startWeight,
-          sets: Array(a.sets).fill(null),
-          targetReps: a.targetReps,
-          category: 'accessory' as ExerciseCategory,
-        }));
+        const accessoryDefs = (user.accessories?.[type] || DEFAULT_ACCESSORIES[type]).map(a =>
+          resolveAccessoryConfig(a, type)
+        );
+        const accessoryExercises: ExerciseSession[] = accessoryDefs.map(a =>
+          buildAccessorySession(a, user.currentWeights)
+        );
 
         exercises = [...warmupExercises, ...mainExercises, ...accessoryExercises];
 
@@ -523,6 +499,21 @@ export default function App() {
         ...activeSession,
         exercises: [...activeSession.exercises, newEx]
     });
+  };
+
+  const swapExerciseVariant = (exerciseIndex: number) => {
+    if (!activeSession) return;
+    const ex = activeSession.exercises[exerciseIndex];
+    const swapped = applyExerciseSwap(ex, user.currentWeights);
+    if (!swapped) return;
+
+    if (!swapped.usingAlternate && swapped.category === 'main' && swapped.progressionKey) {
+      swapped.attempt = user.exerciseAttempts?.[swapped.progressionKey] || 1;
+    }
+
+    const updatedExercises = [...activeSession.exercises];
+    updatedExercises[exerciseIndex] = swapped;
+    setActiveSession({ ...activeSession, exercises: updatedExercises });
   };
 
   const updateSet = (exerciseIndex: number, setIndex: number, reps: number) => {
@@ -667,36 +658,40 @@ export default function App() {
                 // Skip warmup exercises -- no weight progression
                 if (ex.category === 'warmup') return;
 
-                // Accessories: just save their current weight for next session, no deload logic
-                if (ex.category === 'accessory') {
+                // Accessories and dumbbell alternates: save weight only
+                if (ex.category === 'accessory' || !isBarbellProgressionLift(ex)) {
                     newWeights[ex.name] = ex.weight;
                     return;
                 }
 
-                // Main lifts: full StrongLifts progression
-                const progression = calculateProgression(ex, prev);
+                // Main lifts (barbell): full StrongLifts progression
+                const progressionKey = ex.progressionKey || ex.name;
+                const progression = calculateProgression(
+                  { ...ex, name: progressionKey },
+                  prev
+                );
                 
-                newWeights[ex.name] = progression.nextWeight;
-                newAttempts[ex.name] = progression.nextAttempt;
-                newFailures[ex.name] = progression.nextConsecutiveFailures;
+                newWeights[progressionKey] = progression.nextWeight;
+                newAttempts[progressionKey] = progression.nextAttempt;
+                newFailures[progressionKey] = progression.nextConsecutiveFailures;
                 
                 if (progression.deloadInfo) {
                     modalDeloads.push({
-                        exercise: ex.name,
+                        exercise: progressionKey,
                         oldWeight: progression.deloadInfo.oldWeight,
                         newWeight: progression.deloadInfo.newWeight,
                         reason: progression.deloadInfo.reason
                     });
-                    console.log(`⚠️ Tizi Tracker: ${ex.name} auto-deloaded from ${progression.deloadInfo.oldWeight}${prev.unit} to ${progression.deloadInfo.newWeight}${prev.unit}`);
+                    console.log(`⚠️ Tizi Tracker: ${progressionKey} auto-deloaded from ${progression.deloadInfo.oldWeight}${prev.unit} to ${progression.deloadInfo.newWeight}${prev.unit}`);
                 } else if (progression.nextConsecutiveFailures > 0) {
-                    console.log(`⚠️ Tizi Tracker: ${ex.name} failed (${progression.nextConsecutiveFailures}/3 consecutive failures)`);
+                    console.log(`⚠️ Tizi Tracker: ${progressionKey} failed (${progression.nextConsecutiveFailures}/3 consecutive failures)`);
                 } else if (ex.sets.every(r => r === (ex.targetReps ?? 5))) {
                     const currentAttempt = ex.attempt || 1;
-                    const repeatCount = prev.repeatCount?.[ex.name] ?? 2;
+                    const repeatCount = prev.repeatCount?.[progressionKey] ?? 2;
                     if (currentAttempt >= repeatCount) {
-                        console.log(`📈 Tizi Tracker: ${ex.name} progressed to ${progression.nextWeight}${prev.unit} (attempt 1)`);
+                        console.log(`📈 Tizi Tracker: ${progressionKey} progressed to ${progression.nextWeight}${prev.unit} (attempt 1)`);
                     } else {
-                        console.log(`🔄 Tizi Tracker: ${ex.name} at ${ex.weight}${prev.unit} (attempt ${progression.nextAttempt}/${repeatCount})`);
+                        console.log(`🔄 Tizi Tracker: ${progressionKey} at ${ex.weight}${prev.unit} (attempt ${progression.nextAttempt}/${repeatCount})`);
                     }
                 }
             });
@@ -1429,7 +1424,8 @@ export default function App() {
                           onOpenGuide={fetchGuide}
                           onOpenWarmup={(name, weight) => setWarmupModal({name, weight})}
                           onEditWeight={(name, weight) => setWeightModal({index: exIdx, name, weight})}
-                          onEditAttempt={ex.category === 'main' ? updateExerciseAttempt : undefined}
+                          onEditAttempt={ex.category === 'main' && !ex.usingAlternate ? updateExerciseAttempt : undefined}
+                          onSwapVariant={ex.alternateName ? () => swapExerciseVariant(exIdx) : undefined}
                         />
                       );
                     });
@@ -1618,6 +1614,12 @@ export default function App() {
         currentWeight={weightModal?.weight || 0}
         exerciseName={weightModal?.name || ''}
         unit={user.unit}
+        equipment={
+          weightModal != null
+            ? activeSession?.exercises[weightModal.index]?.equipment
+            : undefined
+        }
+        dumbbellPairs={user.dumbbellPairs || DEFAULT_DUMBBELL_PAIRS}
       />
       
       <SettingsModal 

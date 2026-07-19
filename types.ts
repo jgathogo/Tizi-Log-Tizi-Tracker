@@ -9,6 +9,8 @@ export interface SetData {
 
 export type ExerciseCategory = 'warmup' | 'main' | 'accessory';
 
+export type EquipmentType = 'barbell' | 'dumbbell' | 'bodyweight';
+
 export interface ExerciseSession {
   name: ExerciseName;
   weight: number;
@@ -17,6 +19,20 @@ export interface ExerciseSession {
   attempt?: number; // How many times this exercise has been done at this weight (1st, 2nd, 3rd time, etc.)
   targetReps?: number; // Target reps per set (default 5 for main, varies for accessories/warmup)
   category?: ExerciseCategory; // warmup | main | accessory -- affects progression, rest, and display
+  equipment?: EquipmentType;
+  /** Barbell exercise name used for StrongLifts progression when on barbell variant */
+  progressionKey?: string;
+  /** Per-exercise swap: dumbbell (or other) alternate */
+  alternateName?: string;
+  alternateEquipment?: EquipmentType;
+  alternateTargetReps?: number;
+  alternateStartWeight?: number;
+  alternateWeightStyle?: 'per-hand' | 'single';
+  usingAlternate?: boolean;
+  primaryEquipment?: EquipmentType;
+  primaryTargetReps?: number;
+  /** Active dumbbell display: per-hand (pair) or single (goblet) */
+  weightStyle?: 'per-hand' | 'single';
 }
 
 export interface WorkoutSessionData {
@@ -61,6 +77,8 @@ export interface UserProfile {
     A: Array<{ name: string; sets: number; targetReps: number }>;
     B: Array<{ name: string; sets: number; targetReps: number }>;
   };
+  /** Fixed dumbbell pair weights (per hand, kg) — used for quick-pick in weight editor */
+  dumbbellPairs?: number[];
 }
 
 export interface SearchResult {

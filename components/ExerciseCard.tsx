@@ -1,5 +1,5 @@
 import React from 'react';
-import { Dumbbell, Edit2, AlertCircle, Youtube } from 'lucide-react';
+import { Dumbbell, Edit2, AlertCircle, Youtube, ArrowLeftRight } from 'lucide-react';
 import { ExerciseSession } from '../types';
 import { getWeightPerSide, formatPlateBreakdown, getPlateBreakdown } from '../utils/plateCalculator';
 import { getFailureContextTip } from '../utils/motivationUtils';
@@ -8,15 +8,22 @@ import type { Theme } from '../utils/themeColors';
 const FORM_VIDEOS: Record<string, string> = {
   // Main lifts
   'Squat': 'https://www.youtube.com/watch?v=Uv_DKDl7EjA',
+  'Goblet Squat': 'https://www.youtube.com/watch?v=MeIiIdhvXT4',
   'Bench Press': 'https://www.youtube.com/watch?v=4Y2ZdHCOXok',
   'Barbell Row': 'https://www.youtube.com/watch?v=kBWAon7ItDw',
   'Overhead Press': 'https://www.youtube.com/watch?v=nNMR9fRGRjQ',
   'Deadlift': 'https://www.youtube.com/watch?v=hCDzSR6bW10',
+  'Dumbbell Bench Press': 'https://www.youtube.com/watch?v=VmB1G1K7v94',
+  'Dumbbell Row': 'https://www.youtube.com/watch?v=pYcpY20QaE8',
+  'Dumbbell Shoulder Press': 'https://www.youtube.com/watch?v=B-aVuyhvLHU',
   // Accessories
   'Barbell Curl': 'https://www.youtube.com/watch?v=kwG2ipFRgFo',
   'Barbell Hip Thrust': 'https://www.youtube.com/watch?v=W86oVlnLqY4',
+  'Dumbbell Hip Thrust': 'https://www.youtube.com/watch?v=SEd7K6Uql4k',
+  'Lateral Raise': 'https://www.youtube.com/watch?v=3VcKaXpzqRo',
   'Chin-ups': 'https://www.youtube.com/watch?v=brhRXlOhWAM',
   'Bulgarian Split Squat': 'https://www.youtube.com/watch?v=onUcwAbmZF8',
+  'DB Bulgarian Split Squat': 'https://www.youtube.com/watch?v=2C-uNgKwPLE',
   // Warmups
   'Jumping Jacks': 'https://www.youtube.com/watch?v=uLVt6u15L98',
   'Bodyweight Squats': 'https://www.youtube.com/watch?v=aclHkVaku9U',
@@ -40,9 +47,17 @@ interface ExerciseCardProps {
   onOpenWarmup: (name: string, weight: number) => void;
   onEditWeight: (name: string, currentWeight: number) => void;
   onEditAttempt?: (exerciseIndex: number, attempt: number) => void;
+  onSwapVariant?: () => void;
   exerciseIndex?: number;
   unit: string;
   theme: Theme;
+}
+
+function equipmentLabel(exercise: ExerciseSession): string | null {
+  if (exercise.equipment === 'dumbbell') return 'dumbbell';
+  if (exercise.equipment === 'barbell') return 'barbell';
+  if (exercise.equipment === 'bodyweight') return 'bodyweight';
+  return null;
 }
 
 export const ExerciseCard: React.FC<ExerciseCardProps> = ({ 
@@ -52,6 +67,7 @@ export const ExerciseCard: React.FC<ExerciseCardProps> = ({
   onOpenWarmup, 
   onEditWeight,
   onEditAttempt,
+  onSwapVariant,
   exerciseIndex,
   unit,
   theme
@@ -59,6 +75,13 @@ export const ExerciseCard: React.FC<ExerciseCardProps> = ({
   const target = exercise.targetReps ?? 5;
   const isWarmup = exercise.category === 'warmup';
   const isAccessory = exercise.category === 'accessory';
+  const isDumbbell = exercise.equipment === 'dumbbell';
+  const isSingleDumbbell = isDumbbell && (exercise.weightStyle === 'single' || exercise.name === 'Goblet Squat');
+  const isBodyweight = exercise.equipment === 'bodyweight' || (isAccessory && exercise.weight === 0 && exercise.name === 'Chin-ups');
+  const equip = equipmentLabel(exercise);
+  const swapTarget = exercise.usingAlternate
+    ? exercise.progressionKey
+    : exercise.alternateName;
 
   const getCircleColor = (reps: number | null) => {
     if (reps === null) {
@@ -87,10 +110,15 @@ export const ExerciseCard: React.FC<ExerciseCardProps> = ({
     <div className={`${cardBg} rounded-2xl p-4 md:p-6 shadow-lg border ${cardBorder} mb-4`}>
       <div className="flex justify-between items-start mb-6">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <h3 className={`text-xl font-bold ${isWarmup ? 'text-info' : isAccessory ? 'text-secondary' : 'text-base-content'}`}>{exercise.name}</h3>
             {isWarmup && <span className="text-[10px] font-bold uppercase bg-info/10 text-info px-2 py-0.5 rounded-full">warmup</span>}
             {isAccessory && <span className="text-[10px] font-bold uppercase bg-secondary/10 text-secondary px-2 py-0.5 rounded-full">accessory</span>}
+            {equip && !isWarmup && (
+              <span className="text-[10px] font-bold uppercase bg-base-300 text-base-content/70 px-2 py-0.5 rounded-full">
+                {equip}
+              </span>
+            )}
             {onEditAttempt !== undefined && exerciseIndex !== undefined ? (
               <button
                 onClick={() => {
@@ -120,6 +148,10 @@ export const ExerciseCard: React.FC<ExerciseCardProps> = ({
             <div className="text-sm text-base-content/70 mt-1">
               {target} {exercise.name.includes('seconds') || exercise.name.includes('Plank') ? 'sec' : 'reps'} per set
             </div>
+          ) : isBodyweight ? (
+            <div className="text-sm text-base-content/70 mt-1">
+              {target} reps per set — bodyweight
+            </div>
           ) : (
             <div className="flex flex-col gap-1">
               <button 
@@ -129,29 +161,53 @@ export const ExerciseCard: React.FC<ExerciseCardProps> = ({
               >
                  <div className="flex items-baseline gap-1">
                    <span className="text-3xl font-bold text-primary group-hover:text-primary/80 transition-colors">{exercise.weight}</span>
-                   <span className="text-sm font-medium text-base-content/60">{unit}</span>
+                   <span className="text-sm font-medium text-base-content/60">
+                     {unit}{isSingleDumbbell ? '' : isDumbbell ? ' / hand' : ''}
+                   </span>
                  </div>
                  <Edit2 size={16} className="text-base-content/70 group-hover:text-primary transition-colors" />
               </button>
-              {(() => {
-                const weightPerSide = getWeightPerSide(exercise.weight, unit as 'kg' | 'lb');
-                const plates = getPlateBreakdown(weightPerSide, unit as 'kg' | 'lb');
-                const plateText = formatPlateBreakdown(plates, unit as 'kg' | 'lb');
-                if (weightPerSide <= 0) return null;
-                return (
-                  <div className="text-xs text-base-content/70 ml-2">
-                    <span className="font-medium">{weightPerSide.toFixed(weightPerSide % 1 === 0 ? 0 : 1)}{unit} / side</span>
-                    {plates.length > 0 && (
-                      <span className="text-base-content/60 ml-2">({plateText})</span>
-                    )}
-                  </div>
-                );
-              })()}
+              {isDumbbell ? (
+                <div className="text-xs text-base-content/70 ml-2">
+                  <span className="font-medium">
+                    {isSingleDumbbell
+                      ? `One dumbbell: ${exercise.weight}${unit}`
+                      : `Each hand: ${exercise.weight}${unit}`}
+                  </span>
+                  {!isSingleDumbbell && (
+                    <span className="text-base-content/60 ml-2">(pair of {exercise.weight}{unit} dumbbells)</span>
+                  )}
+                </div>
+              ) : (
+                (() => {
+                  const weightPerSide = getWeightPerSide(exercise.weight, unit as 'kg' | 'lb');
+                  const plates = getPlateBreakdown(weightPerSide, unit as 'kg' | 'lb');
+                  const plateText = formatPlateBreakdown(plates, unit as 'kg' | 'lb');
+                  if (weightPerSide <= 0) return null;
+                  return (
+                    <div className="text-xs text-base-content/70 ml-2">
+                      <span className="font-medium">{weightPerSide.toFixed(weightPerSide % 1 === 0 ? 0 : 1)}{unit} / side</span>
+                      {plates.length > 0 && (
+                        <span className="text-base-content/60 ml-2">({plateText})</span>
+                      )}
+                    </div>
+                  );
+                })()
+              )}
             </div>
           )}
         </div>
         <div className="flex gap-2">
-          {!isWarmup && !isAccessory && (
+          {onSwapVariant && swapTarget && (
+            <button
+              onClick={onSwapVariant}
+              className="p-2 bg-accent/15 hover:bg-accent/25 text-accent border border-accent/30 rounded-lg transition-colors"
+              title={`Switch to ${swapTarget}`}
+            >
+              <ArrowLeftRight size={20} />
+            </button>
+          )}
+          {!isWarmup && !isAccessory && !isDumbbell && (
             <button 
                 onClick={() => onOpenWarmup(exercise.name, exercise.weight)}
                 className="p-2 bg-base-200 hover:bg-base-300 text-base-content/70 hover:text-primary rounded-lg transition-colors"
@@ -174,6 +230,12 @@ export const ExerciseCard: React.FC<ExerciseCardProps> = ({
         </div>
       </div>
 
+      {onSwapVariant && swapTarget && (
+        <div className="text-xs text-base-content/60 mb-4 -mt-2 ml-1">
+          Use the swap button to switch to {swapTarget}
+        </div>
+      )}
+
       <div className="flex justify-between gap-2 md:gap-4">
         {exercise.sets.map((reps, index) => (
           <div key={index} className="flex flex-col items-center gap-2">
@@ -192,8 +254,8 @@ export const ExerciseCard: React.FC<ExerciseCardProps> = ({
         ))}
       </div>
 
-      {/* Contextual failure tip (main lifts only) */}
-      {!isWarmup && !isAccessory && (() => {
+      {/* Contextual failure tip (barbell main lifts only) */}
+      {!isWarmup && !isAccessory && !isDumbbell && (() => {
         const firstFailedIdx = exercise.sets.findIndex(r => r !== null && r < target);
         if (firstFailedIdx === -1) return null;
         const tip = getFailureContextTip(firstFailedIdx, exercise.sets.length);
